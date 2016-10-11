@@ -1,0 +1,92 @@
+%sort for presslevel of brakes and threttoles and sort for batterylevel of batteries indates how much energy they have. 
+%sort for the source of energy generating.
+sort Level = struct empty|half|deep;
+     BatteryLevel = struct low|middle|full;
+     BatteryStatus = struct load|provide|idle;
+     Source = struct brake|solarpanel;
+     Direction = struct forward|backward;
+     Group = struct groupA|groupB;
+     Temperature = struct normal|overheated;
+
+act startbutton_switched:Bool;
+    emergency_detected:Bool;
+    backward_switched;
+    forward_switched;
+    brake_pressed:Level;
+    throttle_pressed:Level;
+    cruisemode_set:Bool;
+    motor_status_send:Bool#Direction#Int;%the action sends the status of temperature(overheadted or not),the motors'direction and the driving speed.
+    motor_stop;
+    motor_direction_set:Direction;
+    speed_up:Level;
+    speed_down:Level;
+    speed_down_to_desiredspeed:Nat;
+    speed_up_to_desiredspeed:Nat;
+    battery_status_send:BatteryLevel#BatteryStatus#Bool#Group; %the battery status action sends the battery's level(how much energy it has), status(how it works) and temperature status, group number
+    %the following four actions all about battery's working mode.
+    start_provide:Group;
+    stop_provide:Group;
+    start_load:Group#Source;
+    stop_load:Group#Source;
+    status_display:Int#Bool#Direction#BatteryLevel#Bool;%the statuses are speed,motors' temperaturestatus, motors' direction,battery's energy level, battery's temperature status.
+    brake_receive:Level;
+    throttle_receive:Level;
+    backward_switched_received;
+    forward_switched_received;
+
+%Models a battery
+proc Battery(n:Group,s:BatteryStatus,l:BatteryLevel) = 
+	 (l == full && s == load)->sum sr:Source.stop_load(n,sr).Battery(n,idle,full)+ 
+	 (l == full && s == idle)->start_provide(n).(Battery(n,provide,middle) + Battery(n,provide,low))+
+	 (l == low && s == provide)-> stop_provide(n).Battery(n,idle,low)+  
+	 (l == low && s == idle) -> sum sr:Source,l:BatteryLevel.start_load(n,sr).Battery(n,load,l) +
+	 (l == middle && s == idle)-> sum sr:Source.(start_provide(n).(Battery(n,provide,middle)+Battery(n,provide,full))+ start_load(n,sr).(Battery(n,load,middle)+Battery(n,load,full)))+
+	 (l == middle && s == load)-> sum sr:Source.stop_load(n,sr).Battery(n,idle,middle)+
+	 (l == middle && s == provide)->stop_provide(n).Battery(n,idle,middle) +
+	 (l == low && s == load) -> sum sr:Source.stop_load(n,sr).Battery(n,idle,low) +
+	 (l == full && s == provide) -> stop_provide(n).Battery(n,idle,full);
+%proc     Battery(n:Group,s:BatteryStatus,l:BatteryLevel) =
+%	(l == full)->
+%	((s == load)->stop_load(n,sr).Battery(n,s,l))
+%	<>
+%	((l == low)-> 
+%	 	((s == provide)->
+%	 	  stop_provide(n).(tau + start_load(n,sr)).Battery(n,s,l)
+%	 	 <>((s == idle)->start_load(n,sr).Battery(n,s,l)))
+%	 <>
+%	 	((s == load)->
+%	 	 stop_load(n,sr).(tau + start_provide(n,sr)).Battery(n,s,l)
+%		 <>((s == provide)->(stop_provide(n).Battery(n,sl)+ Battery(n,s,l)))));
+	    
+	  
+	
+		    
+	
+%Models a motor
+%action is not a condition,also the model should be recursive?
+%proc Cmotor(speed:Nat, t:Temperature, d:Direction) =
+%	(t == overheated) -> motor_stop +
+%	brake_receive.(speed > 0) -> (speed_down) + %????action is not a condition???
+%	sum l:Nat.(throttle_receive.(s < l) -> (speed_up) +
+%	backward_switched_receive.(d != backward) -> (motor_direction_set(backward)) +
+%	forward_switched_receive.(d != forward) -> (motor_direction_set(forward));
+
+%proc Motor(l:Level,t:Temperature)= 
+%	((t == overheated) -> motor_stop +
+%	brake_recieve(l).speed_down(l) + sum s:Nat.speed_down_to_desired_speed(s)+ 
+%	throttle_recieve(l).speed_up(l)+ sum s:Nat.speed_up_to_desired_speed(s) +
+%	backward_switched.motor_direction_set(backward) + 
+%	forward_switched.motor_direction_set(forward)).Motor(l,t);
+	
+
+%Models the cruise control
+%proc CruiseControl(s:Bool) = 
+
+%Models the Display
+	
+
+%Models the central control
+%proc CentralControl = start_button_switched.;
+
+init Battery(groupA,idle,full);
+    
