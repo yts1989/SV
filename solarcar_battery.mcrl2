@@ -3,12 +3,18 @@
 sort Level = struct empty|half|deep;
      BatteryLevel = struct low|middle|full;
      BatteryStatus = struct load|provide|idle;
+%     Battery = struct battery(group:Group,level:BatteryLevel,status:BatteryStatus);
      Source = struct brake|solarpanel;
      Direction = struct forward|backward;
      Group = struct groupA|groupB;
      Temperature = struct normal|overheated;
+%map level:Battery->BatteryLevel;
+%    status:Battery->BatteryStatus;
+%var battery:Battery,l:BatteryLevel,s:BatteryStatus;
+%eqn level(battery(l,s))=l;
+%    status(battery(l,s))=s;
 
-act startbutton_switched:Bool;
+act start_button_switched:Bool;
     emergency_detected:Bool;
     backward_switched;
     forward_switched;
@@ -23,11 +29,25 @@ act startbutton_switched:Bool;
     speed_down_to_desiredspeed:Nat;
     speed_up_to_desiredspeed:Nat;
     battery_status_send:BatteryLevel#BatteryStatus#Bool#Group; %the battery status action sends the battery's level(how much energy it has), status(how it works) and temperature status, group number
-    %the following four actions all about battery's working mode.
-    start_provide:Group;
-    stop_provide:Group;
-    start_load:Group#Source;
-    stop_load:Group#Source;
+
+    %the following actions all about battery.
+    do_provide,do_load,do_stop_battery;
+    %the following are interal actions.
+    start_battery_recieve,start_battery_send,comm_start_battery;
+    start_battery_ack_send,start_battery_ack_recieve,comm_start_battery_ack:Group#Bool;
+    check_emergency_request,check_emergency_recieve,comm_check_emergency;
+    check_emergency_ack_send,check_emergency_ack_recieve,comm_check_emergency_ack:Bool;%false is safe,true indicates emergency happens.	
+    stop_battery_send,stop_battery_recieve,comm_stop_battery;
+    stop_battery_ack_send,stop_battery_ack_recieve,comm_stop_battery_ack:Group;
+    emergency_send,emergency_recieve,comm_emergency;
+    provide_request_send,provide_request_recieve,comm_provide_request;
+    provide_request_ack_send,provide_request_ack_recieve,comm_provide_ack_request:Bool;
+    battery_status_send,battery_status_recieve,comm_battery_status:BatteryStatus;
+    battery_no_energy_send,battery_no_energy_recieve,comm_battery_no_energy;
+   
+
+    
+
     status_display:Int#Bool#Direction#BatteryLevel#Bool;%the statuses are speed,motors' temperaturestatus, motors' direction,battery's energy level, battery's temperature status.
     brake_receive:Level;
     throttle_receive:Level;
@@ -35,32 +55,39 @@ act startbutton_switched:Bool;
     forward_switched_received;
 
 %Models a battery
-proc Battery(n:Group,s:BatteryStatus,l:BatteryLevel) = 
-	 (l == full && s == load)->sum sr:Source.stop_load(n,sr).Battery(n,idle,full)+ 
-	 (l == full && s == idle)->start_provide(n).(Battery(n,provide,middle) + Battery(n,provide,low))+
-	 (l == low && s == provide)-> stop_provide(n).Battery(n,idle,low)+  
-	 (l == low && s == idle) -> sum sr:Source,l:BatteryLevel.start_load(n,sr).Battery(n,load,l) +
-	 (l == middle && s == idle)-> sum sr:Source.(start_provide(n).(Battery(n,provide,middle)+Battery(n,provide,full))+ start_load(n,sr).(Battery(n,load,middle)+Battery(n,load,full)))+
-	 (l == middle && s == load)-> sum sr:Source.stop_load(n,sr).Battery(n,idle,middle)+
-	 (l == middle && s == provide)->stop_provide(n).Battery(n,idle,middle) +
-	 (l == low && s == load) -> sum sr:Source.stop_load(n,sr).Battery(n,idle,low) +
-	 (l == full && s == provide) -> stop_provide(n).Battery(n,idle,full);
-%proc     Battery(n:Group,s:BatteryStatus,l:BatteryLevel) =
-%	(l == full)->
-%	((s == load)->stop_load(n,sr).Battery(n,s,l))
-%	<>
-%	((l == low)-> 
-%	 	((s == provide)->
-%	 	  stop_provide(n).(tau + start_load(n,sr)).Battery(n,s,l)
-%	 	 <>((s == idle)->start_load(n,sr).Battery(n,s,l)))
-%	 <>
-%	 	((s == load)->
-%	 	 stop_load(n,sr).(tau + start_provide(n,sr)).Battery(n,s,l)
-%		 <>((s == provide)->(stop_provide(n).Battery(n,sl)+ Battery(n,s,l)))));
-	    
-	  
-	
-		    
+%proc Battery(n:Group,s:BatteryStatus,l:BatteryLevel) = 
+%	(l == full && s == load)->sum sr:Source.stop_load(sr).Battery(n,idle,full)+ 
+%	(l == full && s == idle)->start_provide.(Battery(n,provide,middle) + Battery(n,provide,low))+
+%	(l == low && s == provide)-> stop_provide.Battery(n,idle,low)+  
+%	(l == low && s == idle) -> sum sr:Source,l:BatteryLevel.start_load(sr).Battery(n,load,l) +
+%	(l == middle && s == idle)-> sum sr:Source.(start_provide.(Battery(n,provide,middle)+Battery(n,provide,full))+ start_load(sr).(Battery(n,load,middle)+Battery(n,load,full)))+
+%	(l == middle && s == load)-> sum sr:Source.stop_load(sr).Battery(n,idle,middle)+
+%	(l == middle && s == provide)->stop_provide.Battery(n,idle,middle) +
+%	(l == low && s == load) -> sum sr:Source.stop_load(sr).Battery(n,idle,low) +
+%	(l == full && s == provide) -> stop_provide.Battery(n,idle,full);
+proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) = 
+	%we checkthe  emergency status before starting the battery.if the the battery get a switched on signal
+	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
+	check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).(!b)->
+			%sum l:BatteryLevel.stop_battery(current_battery).stop_battery(other_battery).Battery(battery(l,idle),battery(l,idle))
+		start_battery_recieve.(current_battery==groupA)->((l==full)->
+			do_provide.start_battery_ack_send(groupA,true).(Battery(groupA,middle,provide)+Battery(groupA,low,provide))
+			<>start_battery_ack_send(groupA,false).Battery(current_battery,l,s))
+			<>start_battery_ack_send(current_battery,false).Battery(current_battery,l,s)+
+	%if a stop_battery signal or a emergency signal recieved, then stop both batteries
+	(stop_battery_recieve + emergency_recieve).do_stop_battery.stop_battery_ack_send(current_battery).Battery(current_battery,l,idle)+
+	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
+	%inform the CC if both batteries cannot provide. 
+	(l==low&&s==provide)->provide_request_send.sum b:Bool.provide_request_ack_recieve(b).(b->
+			do_load.battery_status_send(load).(Battery(current_battery,middle,load)+Battery(current_battery,full,load))
+			<>battery_no_energy_send.Battery(current_battery,l,s))+
+	%if the battery recieve a request to replace the providng battery,then check its batterylevel and send a confirm or reject signal.
+	%?? how to formula wait for a while until..
+	provide_request_recieve.(l!=low)->provide_request_ack_send(true).sum s:BatteryStatus.battery_status_recieve(s).
+				((s==load)->do_provide.(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide)))
+				<>provide_request_ack_send(false).Battery(current_battery,low,s)+
+	%whenever the loading battery is full then stop loading
+	(l==full&&s==load)->do_stop_battery.Battery(current_battery,full,idle);
 	
 %Models a motor
 %action is not a condition,also the model should be recursive?
@@ -83,10 +110,37 @@ proc Battery(n:Group,s:BatteryStatus,l:BatteryLevel) =
 %proc CruiseControl(s:Bool) = 
 
 %Models the Display
-	
+
 
 %Models the central control
-%proc CentralControl = start_button_switched.;
-
-init Battery(groupA,idle,full);
+proc CentralControl(start_switch:Bool,emergency:Bool) = 	
+	emergency->emergency_send+
+	check_emergency_recieve.check_emergency_ack_send(emergency)+
+	(start_switch&&!emergency)->sum g:Group,b:Bool.start_battery_send.start_battery_ack_recieve(g,b).CentralControl(true,false);
+				
+init allow({do_provide,do_load,do_stop_battery,emergency_send,
+	comm_start_battery,
+	comm_start_battery_ack,
+	comm_check_emergency,
+	comm_check_emergency_ack,
+	comm_stop_battery,
+	comm_stop_battery_ack,
+	comm_emergency,
+	comm_provide_request,
+	comm_provide_ack_request,
+	comm_battery_status,
+	comm_battery_no_energy},
+	comm({start_battery_recieve|start_battery_send->comm_start_battery,
+     	start_battery_ack_send|start_battery_ack_recieve->comm_start_battery_ack,
+    	check_emergency_request|check_emergency_recieve->comm_check_emergency,
+    	check_emergency_ack_send|check_emergency_ack_recieve->comm_check_emergency_ack,
+    	stop_battery_send|stop_battery_recieve->comm_stop_battery,
+    	stop_battery_ack_send|stop_battery_ack_recieve->comm_stop_battery_ack,
+	emergency_send|emergency_recieve->comm_emergency,
+	provide_request_send|provide_request_recieve->comm_provide_request,
+    	provide_request_ack_send|provide_request_ack_recieve->comm_provide_ack_request,
+    	battery_status_send|battery_status_recieve->comm_battery_status,
+    	battery_no_energy_send|battery_no_energy_recieve->comm_battery_no_energy},
+	Battery(groupA,full,idle)||Battery(groupB,full,idle)||CentralControl(true,false))
+	);	
     
