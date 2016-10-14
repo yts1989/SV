@@ -68,24 +68,52 @@ act do_switch_on:Bool;%start_button
 proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) = 
 	%we checkthe  emergency status before starting the battery.if the the battery get a switched on signal
 	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
-	start_battery_recieve.(s==idle)->check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).(!b)->
-			%sum l:BatteryLevel.stop_battery(current_battery).stop_battery(other_battery).Battery(battery(l,idle),battery(l,idle))
-		(current_battery==groupA)->((l==full)->
-			do_provide.start_battery_ack_send(groupA,true).(Battery(groupA,middle,provide)+Battery(groupA,low,provide))
-			<>start_battery_ack_send(groupA,false).Battery(current_battery,l,s))
-			<>start_battery_ack_send(current_battery,false).Battery(current_battery,l,s)+
+	start_battery_recieve.
+	(s==idle)->(
+		check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).
+		(!b)->(
+			(current_battery==groupA)->(
+				(l==full)->(
+				   do_provide.
+				   start_battery_ack_send(groupA,true).
+				   (Battery(groupA,middle,provide)+Battery(groupA,low,provide))
+				)
+				<>
+				   start_battery_ack_send(groupA,false).Battery(current_battery,l,s)
+			)
+		)
+		<>
+		   start_battery_ack_send(current_battery,false).Battery(current_battery,l,s)
+	)+
 	%if a stop_battery signal or a emergency signal recieved, then stop both batteries
-	(stop_battery_recieve + emergency_recieve).do_stop_battery.stop_battery_ack_send(current_battery).Battery(current_battery,l,idle)+
+	(stop_battery_recieve + emergency_recieve).
+	do_stop_battery.stop_battery_ack_send(current_battery).
+	Battery(current_battery,l,idle)+
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
 	%inform the CC if both batteries cannot provide. 
-	(l==low&&s==provide)->provide_request_send.sum b:Bool.provide_request_ack_recieve(b).(b->
-			do_load.battery_status_send(load).(Battery(current_battery,middle,load)+Battery(current_battery,full,load))
-			<>battery_no_energy_send.Battery(current_battery,l,s))+
+	(l==low&&s==provide)->(
+		provide_request_send.
+		sum b:Bool.provide_request_ack_recieve(b).
+		b->(
+		      do_load.battery_status_send(load).
+		      (Battery(current_battery,middle,load)+Battery(current_battery,full,load))
+		)
+		<>
+		    battery_no_energy_send.Battery(current_battery,l,s)
+	)+
 	%if the battery recieve a request to replace the providng battery,then check its batterylevel and send a confirm or reject signal.
 	%?? how to formula wait for a while until..
-	provide_request_recieve.(l!=low)->provide_request_ack_send(true).sum s:BatteryStatus.battery_status_recieve(s).
-				((s==load)->do_provide.(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide)))
-				<>provide_request_ack_send(false).Battery(current_battery,low,s)+
+	provide_request_recieve.
+	(l!=low)->(
+		provide_request_ack_send(true).
+		sum s:BatteryStatus.battery_status_recieve(s).
+		(s==load)->(
+		    do_provide.
+		   (Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		)
+		<>
+		   provide_request_ack_send(false).Battery(current_battery,low,s)
+	)+
 	%whenever the loading battery is full then stop loading
 	(l==full&&s==load)->do_stop_battery.Battery(current_battery,full,idle);
 	
