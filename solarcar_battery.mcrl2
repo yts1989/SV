@@ -68,7 +68,7 @@ act start_button_switched:Bool;
 proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) = 
 	%we checkthe  emergency status before starting the battery.if the the battery get a switched on signal
 	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
-	check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).(!b)->
+	(s==idle)->check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).(!b)->
 			%sum l:BatteryLevel.stop_battery(current_battery).stop_battery(other_battery).Battery(battery(l,idle),battery(l,idle))
 		start_battery_recieve.(current_battery==groupA)->((l==full)->
 			do_provide.start_battery_ack_send(groupA,true).(Battery(groupA,middle,provide)+Battery(groupA,low,provide))
@@ -114,9 +114,8 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 
 %Models the central control
 proc CentralControl(start_switch:Bool,emergency:Bool) = 	
-	emergency->emergency_send+
-	check_emergency_recieve.check_emergency_ack_send(emergency)+
-	(start_switch&&!emergency)->sum g:Group,b:Bool.start_battery_send.start_battery_ack_recieve(g,b).CentralControl(true,false);
+	emergency->emergency_send.CentralControl(true,true).check_emergency_recieve.check_emergency_ack_send(emergency).CentralControl(start_switch,emergency)
+	<>check_emergency_recieve.check_emergency_ack_send(emergency).(start_switch->sum g:Group,b:Bool.start_battery_send.start_battery_ack_recieve(g,b).CentralControl(true,false));
 				
 init allow({do_provide,do_load,do_stop_battery,emergency_send,
 	comm_start_battery,
