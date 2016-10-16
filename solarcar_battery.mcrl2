@@ -22,7 +22,7 @@ map speed_upper_bound:Nat;
 var n:Nat;
 eqn speed_upper_bound = 100;
     speed_lower_bound = 0;
-    speed_step = 50;
+    speed_step = 10;
     speed_down_by_step(n)=Int2Nat(if(n>speed_step,n-speed_step,0));
     speed_up_by_step(n)=Int2Nat(if(n<speed_upper_bound,n+speed_step,speed_upper_bound));
 	
@@ -163,7 +163,7 @@ proc Motor(m:MotorMode,speed:Nat,t:Temperature)=
 				speed_down.Motor(decelerate,speed_down_by_step(speed),t)+
 				brake_released.Motor(constant,speed,t)+
 				throttle_pressed.speed_up.Motor(accelerate,speed_up_by_step(speed),t)
-		     	)+
+		    )+
 	%if the throttle is being pressed
 			(m==accelerate)->(
 				speed_up.Motor(accelerate,speed_up_by_step(speed),t)+
@@ -177,25 +177,30 @@ proc Motor(m:MotorMode,speed:Nat,t:Temperature)=
 			    	    cruise_mode_unset.motor2central_motor(false,speed).Motor(accelerate,speed,t)+
 			    	    brake_pressed.motor2central_motor(false,speed).Motor(decelerate,speed,t)
 				)
-		     	)+
+		    )+
 	%if neither the break nor the throttle is being pressed
-		          (m==constant)->(
-				sum cruise:Bool,s:Nat.central2motor_motor(cruise,s).
-				(!cruise)->(
-			    	    cruise_mode_set.motor2central_motor(true,speed).Motor(constant,speed,t)+
-				    brake_pressed.Motor(decelerate,speed,t)+
-				    throttle_pressed.Motor(accelerate,speed,t)
-				)<>(
-			    	    cruise_mode_unset.motor2central_motor(false,speed).Motor(constant,speed,t)+
-				    brake_pressed.motor2central_motor(false,speed).Motor(decelerate,speed,t)+
-				    throttle_pressed.Motor(accelerate,speed,t)+
-			    	    (speed>=s)->speed_down.Motor(constant,speed_down_by_step(speed),t)
-				              <>speed_up.Motor(constant,speed_up_by_step(speed),t)
-				)
+		    (m==constant)->(
+		        sum switch:Bool.central2motor_motor_switch(switch).
+		        (!switch)->(
+		            speed_down.Motor(constant,0,t)
+		        )<>(
+				    sum cruise:Bool,s:Nat.central2motor_motor(cruise,s).
+                    (!cruise)->(
+                        cruise_mode_set.motor2central_motor(true,speed).Motor(constant,speed,t)+
+                        brake_pressed.Motor(decelerate,speed,t)+
+                        throttle_pressed.Motor(accelerate,speed,t)
+                    )<>(
+                        cruise_mode_unset.motor2central_motor(false,speed).Motor(constant,speed,t)+
+                        brake_pressed.motor2central_motor(false,speed).Motor(decelerate,speed,t)+
+                        throttle_pressed.Motor(accelerate,speed,t)+
+                            (speed>=s)->speed_down.Motor(constant,speed_down_by_step(speed),t)
+                                  <>speed_up.Motor(constant,speed_up_by_step(speed),t)
+                    )
 			
 		     	)
-                   	)
-	    );
+            )
+	    )
+	);
 
 %Models the Display
 
@@ -215,8 +220,8 @@ proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) =
 		    central2motor_central_switch(false).
 		    Central(false,emergency,cruise,desired_speed)+
 		    central2motor_central(cruise,desired_speed).Central(start_switch,emergency,cruise,desired_speed)+
-		    sum c:Bool,speed:Nat.motor2central_central(c,speed).Central(start_switch,emergency,c,speed)+
-		    central2motor_central_switch(start_switch).Central(start_switch,emergency,cruise,desired_speed)
+		    sum c:Bool,speed:Nat.motor2central_central(c,speed).Central(start_switch,emergency,c,speed)
+		    
 		)
 	);
 				
