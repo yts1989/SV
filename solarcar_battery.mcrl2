@@ -1,7 +1,6 @@
 %sort for presslevel of brakes and threttoles and sort for batterylevel of batteries indates how much energy they have. 
 %sort for the source of energy generating.
-sort PressLevel = struct release|half|deep;
-     MotorMode = struct accelerate|decelerate|constant;
+sort MotorMode = struct accelerate|decelerate|release;
      BatteryLevel = struct low|middle|full;
      BatteryStatus = struct load|provide|idle;   
 %     Battery = struct battery(group:Group,level:BatteryLevel,status:BatteryStatus);
@@ -9,11 +8,7 @@ sort PressLevel = struct release|half|deep;
      Direction = struct forward|backward;
      Group = struct groupA|groupB;
      Temperature = struct normal|overheated;
-%map level:Battery->BatteryLevel;
-%    status:Battery->BatteryStatus;
-%var battery:Battery,l:BatteryLevel,s:BatteryStatus;
-%eqn level(battery(l,s))=l;
-%    status(battery(l,s))=s;
+
 map speed_upper_bound:Nat;
     speed_lower_bound:Nat;
     speed_step:Nat;
@@ -22,7 +17,7 @@ map speed_upper_bound:Nat;
 var n:Nat;
 eqn speed_upper_bound = 100;
     speed_lower_bound = 0;
-    speed_step = 10;
+    speed_step = 50;
     speed_down_by_step(n)=Int2Nat(if(n>speed_step,n-speed_step,0));
     speed_up_by_step(n)=Int2Nat(if(n<speed_upper_bound,n+speed_step,speed_upper_bound));
 	
@@ -33,112 +28,96 @@ act do_switch_on;%start_button
     emergency_detected:Bool;
 
     %the following actions all about motor
-    backward_switched;
-    forward_switched;
     brake_pressed;
     brake_released;
     throttle_pressed;
     throttle_released;
     cruise_mode_set;
     cruise_mode_unset;
-    motor_status_send:Bool#Direction#Int;%the action sends the status of temperature(overheadted or not),the motors'direction and the driving speed.
-    stop_motor;
-    motor_direction_set:Direction;
     speed_up;
     speed_down;
+    speed_down_zero;
     %interal action
-    motor2central_motor,motor2central_central,motor2central:Bool#Nat;
-    central2motor_central,central2motor_motor,central2motor:Bool#Nat;
+    motor2central_motor_cruise,motor2central_central_cruise,motor2central_cruise:Bool#Nat;
+    central2motor_central_cruise,central2motor_motor_cruise,central2motor_cruise:Bool#Nat;
     central2motor_central_switch,central2motor_motor_switch,central2motor_switch:Bool;
+    central2motor_central_stop,central2motor_motor_stop,central2motor_stop;
+    motor2central_motor_speed,motor2central_central_speed,motor2central_speed:Nat;   
+ 
     battery_status_send:BatteryLevel#BatteryStatus#Bool#Group; %the battery status action sends the battery's level(how much energy it has), status(how it works) and temperature status, group number
 
     %the following actions all about battery.
-    do_provide,do_load,do_stop_battery;
+    do_provide:Group;
+    do_load;
+    do_stop;
     %the following are interal actions.
-    start_battery_recieve,start_battery_send,comm_start_battery;
-    start_battery_ack_send,start_battery_ack_recieve,comm_start_battery_ack:Group#Bool;
-    check_emergency_request,check_emergency_recieve,comm_check_emergency;
-    check_emergency_ack_send,check_emergency_ack_recieve,comm_check_emergency_ack:Bool;%false is safe,true indicates emergency happens.	
-    stop_battery_send,stop_battery_recieve,comm_stop_battery;
-    stop_battery_ack_send,stop_battery_ack_recieve,comm_stop_battery_ack:Group;
-    emergency_send,emergency_recieve,comm_emergency;
-    provide_request_send,provide_request_recieve,comm_provide_request;
-    provide_request_ack_send,provide_request_ack_recieve,comm_provide_ack_request:Bool;
-    battery_status_send,battery_status_recieve,comm_battery_status:BatteryStatus;
-    battery_no_energy_send,battery_no_energy_recieve,comm_battery_no_energy;
+    central2battery_battery_start,central2battery_central_start,central2battery_start;
+    central2battery_battery_stop,central2battery_central_stop,central2battery_stop;
+    battery2central_central_status,battery2central_battery_status,battery2central_status:BatteryStatus;
+    b2battery_battery_provide,b2battery_b_provide,b2battery_provide;
+    b2battery_battery_status,b2battery_b_status,b2battery_status:BatteryStatus;
+    battery2central_battery_energy,battery2central_central_energy,battery2central_energy;
    
 
     
 
     status_display:Int#Bool#Direction#BatteryLevel#Bool;%the statuses are speed,motors' temperaturestatus, motors' direction,battery's energy level, battery's temperature status.
-    brake_receive:PressLevel;
-    throttle_receive:PressLevel;
-    backward_switched_received;
-    forward_switched_received;
+
 
 %Models a battery
-%proc Battery(n:Group,s:BatteryStatus,l:BatteryLevel) = 
-%	(l == full && s == load)->sum sr:Source.stop_load(sr).Battery(n,idle,full)+ 
-%	(l == full && s == idle)->start_provide.(Battery(n,provide,middle) + Battery(n,provide,low))+
-%	(l == low && s == provide)-> stop_provide.Battery(n,idle,low)+  
-%	(l == low && s == idle) -> sum sr:Source,l:BatteryLevel.start_load(sr).Battery(n,load,l) +
-%	(l == middle && s == idle)-> sum sr:Source.(start_provide.(Battery(n,provide,middle)+Battery(n,provide,full))+ start_load(sr).(Battery(n,load,middle)+Battery(n,load,full)))+
-%	(l == middle && s == load)-> sum sr:Source.stop_load(sr).Battery(n,idle,middle)+
-%	(l == middle && s == provide)->stop_provide.Battery(n,idle,middle) +
-%	(l == low && s == load) -> sum sr:Source.stop_load(sr).Battery(n,idle,low) +
-%	(l == full && s == provide) -> stop_provide.Battery(n,idle,full);
 proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) = 
 	%we checkthe  emergency status before starting the battery.if the the battery get a switched on signal
 	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
-	start_battery_recieve.
+	%start_battery_recieve.
+	battery2central_battery_status(s).Battery(current_battery,l,s)+
+	b2battery_b_status(s).Battery(current_battery,l,s)+
 	(s==idle)->(
-		check_emergency_request.sum b:Bool.check_emergency_ack_recieve(b).
-		(!b)->(
-			(current_battery==groupA)->(
-				(l==full)->(
-				   do_provide.
-				   start_battery_ack_send(groupA,true).
-				   (Battery(groupA,middle,provide)+Battery(groupA,low,provide))
-				)
-				<>
-				   start_battery_ack_send(groupA,false).Battery(groupA,l,idle)
-			)
-			<>
-		   	    start_battery_ack_send(current_battery,false).Battery(groupB,l,idle)
-		)
-		
+		(l==full)->(
+		    central2battery_battery_start.
+		    (current_battery==groupA)->(
+			do_provide(current_battery).
+			(Battery(groupA,low,provide)+Battery(groupA,middle,provide))
+		    )<>(
+     			battery2central_battery_status(s).Battery(current_battery,l,s)
+		    )+
+		    b2battery_battery_provide.
+		    sum bs:BatteryStatus.b2battery_battery_status(bs).
+		    (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		    	      <>Battery(current_battery,l,s)
+		)+
+		(l==low)->(
+		    do_load.(Battery(current_battery,middle,load)+Battery(current_battery,full,load))+
+		    b2battery_battery_provide.
+		    battery2central_battery_energy.Battery(current_battery,low,s)
+		)+
+		(l==middle)->(
+		    do_load.Battery(current_battery,full,load)+
+		    b2battery_battery_provide.
+		    sum bs:BatteryStatus.b2battery_battery_status(bs).
+		    (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		    	      <>Battery(current_battery,l,s)		)
 	)+
-	%if a stop_battery signal or a emergency signal recieved, then stop both batteries
-	(stop_battery_recieve + emergency_recieve).
-	do_stop_battery.stop_battery_ack_send(current_battery).
-	Battery(current_battery,l,idle)+
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
 	%inform the CC if both batteries cannot provide. 
-	(l==low&&s==provide)->(
-		provide_request_send.
-		sum b:Bool.provide_request_ack_recieve(b).
-		b->(
-		      do_load.battery_status_send(load).
-		      (Battery(current_battery,middle,load)+Battery(current_battery,full,load))
+	(s==provide)->(
+		central2battery_battery_stop.do_stop.Battery(current_battery,l,idle)+
+		(l==middle)->do_provide(current_battery).Battery(current_battery,low,provide)+
+		(l==low)->(
+		    b2battery_b_provide.do_load.Battery(current_battery,l,load)
 		)
-		<>
-		    battery_no_energy_send.Battery(current_battery,low,provide)
 	)+
-	%if the battery recieve a request to replace the providng battery,then check its batterylevel and send a confirm or reject signal.
-	%?? how to formula wait for a while until..
-	provide_request_recieve.
-	(l!=low)->(
-		provide_request_ack_send(true).
-		sum s1:BatteryStatus.battery_status_recieve(s1).
-		(s1==load)->(
-		    do_provide.
-		   (Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
-		)<>Battery(current_battery,l,s)
-		
-	)<>
-	    provide_request_ack_send(false).Battery(current_battery,low,s)+
-	%whenever the loading battery is full then stop loading
-	(l==full&&s==load)->do_stop_battery.Battery(current_battery,full,idle);
+	(s==load)->(
+		central2battery_battery_stop.do_stop.Battery(current_battery,l,idle)+
+		(l==full)->do_stop.Battery(current_battery,full,idle)+
+		(l==middle)->(
+		   do_load.Battery(current_battery,full,load)+
+		   b2battery_battery_provide.
+		   sum bs:BatteryStatus.b2battery_battery_status(bs).
+		   (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		    	      <>Battery(current_battery,l,s) 
+		)
+		+(l==low)->do_load.(Battery(current_battery,full,load)+Battery(current_battery,middle,load))
+	);
 	
 %Models a motor
 %action is not a condition,also the model should be recursive?
@@ -149,58 +128,51 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 %	backward_switched_receive.(d != backward) -> (motor_direction_set(backward)) +
 %	forward_switched_receive.(d != forward) -> (motor_direction_set(forward));
 
-proc Motor(m:MotorMode,speed:Nat,t:Temperature)= 
+proc Motor(on:Bool,m:MotorMode,speed:Nat)= 
 	%
-	sum switch:Bool.central2motor_motor_switch(switch).
-	(!switch)->( 
-		(speed!=0)->speed_down.Motor(m,speed_down_by_step(speed),t)
-	)<>(
-		(t==overheated)->(
-			speed_down.sum t:Temperature.Motor(m,speed_down_by_step(speed),t)
-		)<>(
+	
+		(on)->(
+			
 	%if the break is being pressed
+			central2motor_motor_switch(false).speed_down_zero.Motor(false,release,0)+
 			(m==decelerate)->(
-				speed_down.Motor(decelerate,speed_down_by_step(speed),t)+
-				brake_released.Motor(constant,speed,t)+
-				throttle_pressed.speed_up.Motor(accelerate,speed_up_by_step(speed),t)
-		    )+
-	%if the throttle is being pressed
+				speed_down.Motor(on,decelerate,speed_down_by_step(speed))+
+				brake_released.Motor(on,release,speed)+
+				throttle_pressed.Motor(on,accelerate,speed)
+		     	)+
+	%if the throttle is being presseff?d
 			(m==accelerate)->(
-				speed_up.Motor(accelerate,speed_up_by_step(speed),t)+
-				sum cruise:Bool,s:Nat.central2motor_motor(cruise,s).
+				speed_up.Motor(on,accelerate,speed_up_by_step(speed))+
+				sum cruise:Bool,s:Nat.central2motor_motor_cruise(cruise,s).
 				(!cruise)->(
-			    	    cruise_mode_set.motor2central_motor(true,speed).Motor(m,speed,t)+
-			    	    throttle_released.Motor(constant,speed,t)+
-			    	    brake_pressed.Motor(decelerate,speed,t)
+			    	    cruise_mode_set.motor2central_motor_cruise(true,speed).Motor(on,m,speed)+
+			    	    throttle_released.Motor(on,release,speed)+
+			    	    brake_pressed.Motor(on,decelerate,speed)
 				)<>(
-			    	    throttle_released.motor2central_motor(true,speed).Motor(constant,speed,t)+
-			    	    cruise_mode_unset.motor2central_motor(false,speed).Motor(accelerate,speed,t)+
-			    	    brake_pressed.motor2central_motor(false,speed).Motor(decelerate,speed,t)
+			    	    cruise_mode_unset.motor2central_motor_cruise(false,speed).Motor(on,m,speed)+
+			    	    throttle_released.motor2central_motor_cruise(true,speed).Motor(on,release,speed)+
+			    	    brake_pressed.motor2central_motor_cruise(false,speed).Motor(on,decelerate,speed)
 				)
-		    )+
+		     	)+
 	%if neither the break nor the throttle is being pressed
-		    (m==constant)->(
-		        sum switch:Bool.central2motor_motor_switch(switch).
-		        (!switch)->(
-		            speed_down.Motor(constant,0,t)
-		        )<>(
-				    sum cruise:Bool,s:Nat.central2motor_motor(cruise,s).
-                    (!cruise)->(
-                        cruise_mode_set.motor2central_motor(true,speed).Motor(constant,speed,t)+
-                        brake_pressed.Motor(decelerate,speed,t)+
-                        throttle_pressed.Motor(accelerate,speed,t)
-                    )<>(
-                        cruise_mode_unset.motor2central_motor(false,speed).Motor(constant,speed,t)+
-                        brake_pressed.motor2central_motor(false,speed).Motor(decelerate,speed,t)+
-                        throttle_pressed.Motor(accelerate,speed,t)+
-                            (speed>=s)->speed_down.Motor(constant,speed_down_by_step(speed),t)
-                                  <>speed_up.Motor(constant,speed_up_by_step(speed),t)
-                    )
+		          (m==release)->(
+				sum cruise:Bool,s:Nat.central2motor_motor_cruise(cruise,s).
+				(!cruise)->(
+			    	    cruise_mode_set.motor2central_motor_cruise(true,speed).Motor(on,release,speed)+
+				    brake_pressed.Motor(on,decelerate,speed)+
+				    throttle_pressed.Motor(on,accelerate,speed)
+				)<>(
+			    	    cruise_mode_unset.motor2central_motor_cruise(false,speed).Motor(on,release,speed)+
+				    brake_pressed.motor2central_motor_cruise(false,speed).Motor(on,decelerate,speed)+
+				    throttle_pressed.Motor(on,accelerate,speed)+
+			    	    (speed>=s)->speed_down.Motor(on,release,speed_down_by_step(speed))
+				              <>speed_up.Motor(on,release,speed_up_by_step(speed))
+				)
 			
 		     	)
-            )
-	    )
-	);
+                   	)<>(
+			central2motor_motor_switch(true).Motor(true,release,0)
+		);
 
 %Models the Display
 
@@ -208,53 +180,54 @@ proc Motor(m:MotorMode,speed:Nat,t:Temperature)=
 %Models the central control
 proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) = 	
 	emergency->
-		emergency_send.Central(false,true,false,desired_speed)
+		central2battery_central_stop.central2motor_central_stop.Central(false,true,false,desired_speed)
 	<>(
 		(!start_switch)->(
-		    do_switch_on.start_battery_send.check_emergency_recieve.check_emergency_ack_send(false).
-		    sum b:Bool.start_battery_ack_recieve(groupA,b).
-		    central2motor_central_switch(b).
-		    Central(b,emergency,cruise,desired_speed)
-		)<>(	
-		    (do_switch_off.stop_battery_send+battery_no_energy_recieve).
-		    central2motor_central_switch(false).
-		    Central(false,emergency,cruise,desired_speed)+
-		    central2motor_central(cruise,desired_speed).Central(start_switch,emergency,cruise,desired_speed)+
-		    sum c:Bool,speed:Nat.motor2central_central(c,speed).Central(start_switch,emergency,c,speed)
+		   % sum s:Nat.motor2central_central_speed(s).
+		    %(s==0)->(
+			do_switch_on.central2battery_central_start.
+			sum status:BatteryStatus.battery2central_central_status(status).
+			%check_emergency_recieve.check_emergency_ack_send(false)
+		    	(status==provide)->
+				Central(!start_switch,emergency,cruise,desired_speed)
+				<>Central(start_switch,emergency,cruise,desired_speed)
+		   % )<>Central(start_switch,emergency,cruise,desired_speed)
+		)<>(
+		    (do_switch_off+battery2central_central_energy).
+		    %central2motor_central_stop.
+		    central2battery_central_stop.
+		    Central(!start_switch,emergency,cruise,desired_speed)+
+		    central2motor_central_cruise(cruise,desired_speed).
+		    Central(start_switch,emergency,cruise,desired_speed)+
+		    sum c:Bool,speed:Nat.motor2central_central_cruise(c,speed).Central(start_switch,emergency,c,speed)
 		    
-		)
+		)+
+		central2motor_central_switch(start_switch).Central(start_switch,emergency,cruise,desired_speed)
 	);
 				
-init allow({do_provide,do_load,do_stop_battery,emergency_send,do_switch_on,do_switch_off,
-	brake_pressed,brake_released,throttle_pressed,throttle_released,cruise_mode_set,cruise_mode_unset,speed_up,speed_down,
-	motor2central,
-	central2motor,
-	central2motor_switch,
-	comm_start_battery,
-	comm_start_battery_ack,
-	comm_check_emergency,
-	comm_check_emergency_ack,
-	comm_stop_battery,
-	comm_stop_battery_ack,
-	comm_emergency,
-	comm_provide_request,
-	comm_provide_ack_request,
-	comm_battery_status,
-	comm_battery_no_energy},
-	comm({start_battery_recieve|start_battery_send->comm_start_battery,
-     	start_battery_ack_send|start_battery_ack_recieve->comm_start_battery_ack,
-    	check_emergency_request|check_emergency_recieve->comm_check_emergency,
-    	check_emergency_ack_send|check_emergency_ack_recieve->comm_check_emergency_ack,
-    	stop_battery_send|stop_battery_recieve->comm_stop_battery,
-    	stop_battery_ack_send|stop_battery_ack_recieve->comm_stop_battery_ack,
-	emergency_send|emergency_recieve->comm_emergency,
-	provide_request_send|provide_request_recieve->comm_provide_request,
-    	provide_request_ack_send|provide_request_ack_recieve->comm_provide_ack_request,
-    	battery_status_send|battery_status_recieve->comm_battery_status,
-    	battery_no_energy_send|battery_no_energy_recieve->comm_battery_no_energy,
-    	motor2central_motor|motor2central_central->motor2central,
-    	central2motor_central|central2motor_motor->central2motor,
-    	central2motor_central_switch|central2motor_motor_switch->central2motor_switch},
-	Battery(groupA,full,idle)||Motor(constant,Int2Nat(0),normal)||Central(false,false,false,0))
+init allow({do_provide,do_load,do_stop,do_switch_on,do_switch_off,
+	brake_pressed,brake_released,throttle_pressed,throttle_released,
+	cruise_mode_set,cruise_mode_unset,speed_up,speed_down,speed_down_zero,
+	motor2central_cruise,
+	central2motor_cruise,
+	central2motor_switch,	
+	central2motor_stop,
+	motor2central_speed,
+	central2battery_start,
+	battery2central_status,
+	b2battery_provide,
+	battery2central_energy},
+	comm({
+	motor2central_motor_cruise|motor2central_central_cruise->motor2central_cruise,
+    	central2motor_central_cruise|central2motor_motor_cruise->central2motor_cruise,
+    	central2motor_central_switch|central2motor_motor_switch->central2motor_switch,
+    	central2motor_central_stop|central2motor_motor_stop->central2motor_stop,
+    	motor2central_motor_speed|motor2central_central_speed->motor2central_speed,
+	central2battery_battery_start|central2battery_central_start->central2battery_start,
+    	central2battery_battery_stop|central2battery_central_stop->central2battery_stop,
+    	battery2central_central_status|battery2central_battery_status->battery2central_status,
+    	b2battery_battery_provide|b2battery_b_provide->b2battery_provide,
+    	battery2central_battery_energy|battery2central_central_energy->battery2central_energy},
+	Battery(groupA,full,idle)||Motor(false,release,0)||Central(false,false,false,0))
 	);	
     
