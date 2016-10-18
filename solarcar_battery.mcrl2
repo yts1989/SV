@@ -17,7 +17,7 @@ map speed_upper_bound:Nat;
 var n:Nat;
 eqn speed_upper_bound = 100;
     speed_lower_bound = 0;
-    speed_step = 10;
+    speed_step = 50;
     speed_down_by_step(n)=Int2Nat(if(n>speed_step,n-speed_step,0));
     speed_up_by_step(n)=Int2Nat(if(n<speed_upper_bound,n+speed_step,speed_upper_bound));
 	
@@ -44,9 +44,7 @@ act do_switch_on;%start_button
     central2motor_central_stop,central2motor_motor_stop,central2motor_stop;
     motor2central_motor_speed,motor2central_central_speed,motor2central_speed:Nat;   
  
-    battery_status_send:BatteryLevel#BatteryStatus#Bool#Group; %the battery status action sends the battery's level(how much energy it has), status(how it works) and temperature status, group number
-
-    %the following actions all about battery.
+    battery_status_send:Group#BatteryLevel#BatteryStatus; %input from the sensor
     do_provide:Group;
     do_load:Group;
     do_stop:Group;
@@ -69,6 +67,7 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 	%we checkthe  emergency status before starting the battery.if the the battery get a switched on signal
 	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
 	%start_battery_recieve.
+	battery_status_send(current_battery,l,s).(
 	battery2central_battery_status(s).Battery(current_battery,l,s)+
 	b2battery_b_status(s).Battery(current_battery,l,s)+
 	(s==idle)->(
@@ -76,17 +75,17 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		    central2battery_battery_start.
 		    (current_battery==groupA)->(
 			do_provide(current_battery).
-			(Battery(groupA,low,provide)+Battery(groupA,middle,provide))
+			Battery(groupA,middle,provide)
 		    )<>(
      			battery2central_battery_status(s).Battery(current_battery,l,s)
 		    )+
 		    b2battery_battery_provide.
 		    sum bs:BatteryStatus.b2battery_battery_status(bs).
-		    (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		    (bs!=provide)->do_provide(current_battery).Battery(current_battery,middle,provide)
 		    	      <>Battery(current_battery,l,s)
 		)+
 		(l==low)->(
-		    do_load(current_battery).(Battery(current_battery,middle,load)+Battery(current_battery,full,load))+
+		    do_load(current_battery).Battery(current_battery,middle,load)+
 		    b2battery_battery_provide.
 		    battery2central_battery_energy.Battery(current_battery,low,s)
 		)+
@@ -94,7 +93,7 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		    do_load(current_battery).Battery(current_battery,full,load)+
 		    b2battery_battery_provide.
 		    sum bs:BatteryStatus.b2battery_battery_status(bs).
-		    (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		    (bs!=provide)->do_provide(current_battery).Battery(current_battery,low,provide)
 		    	      <>Battery(current_battery,l,s)		)
 	)+
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
@@ -113,11 +112,11 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		   do_load(current_battery).Battery(current_battery,full,load)+
 		   b2battery_battery_provide.
 		   sum bs:BatteryStatus.b2battery_battery_status(bs).
-		   (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
+		   (bs!=provide)->do_provide(current_battery).Battery(current_battery,low,provide)
 		    	      <>Battery(current_battery,l,s) 
 		)
-		+(l==low)->do_load(current_battery).(Battery(current_battery,full,load)+Battery(current_battery,middle,load))
-	);
+		+(l==low)->do_load(current_battery).Battery(current_battery,middle,load)
+	));
 	
 %Models a motor
 %action is not a condition,also the model should be recursive?
@@ -204,7 +203,7 @@ proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) =
 		central2motor_central_switch(start_switch).Central(start_switch,emergency,cruise,desired_speed)
 	);
 				
-init allow({do_provide,do_load,do_stop,do_switch_on,do_switch_off,
+init allow({battery_status_send,do_provide,do_load,do_stop,do_switch_on,do_switch_off,
 	brake_pressed,brake_released,throttle_pressed,throttle_released,
 	cruise_mode_set,cruise_mode_unset,speed_up,speed_down,speed_down_zero,
 	motor2central_cruise,
