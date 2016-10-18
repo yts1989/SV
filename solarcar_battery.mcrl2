@@ -17,7 +17,7 @@ map speed_upper_bound:Nat;
 var n:Nat;
 eqn speed_upper_bound = 100;
     speed_lower_bound = 0;
-    speed_step = 50;
+    speed_step = 10;
     speed_down_by_step(n)=Int2Nat(if(n>speed_step,n-speed_step,0));
     speed_up_by_step(n)=Int2Nat(if(n<speed_upper_bound,n+speed_step,speed_upper_bound));
 	
@@ -48,8 +48,8 @@ act do_switch_on;%start_button
 
     %the following actions all about battery.
     do_provide:Group;
-    do_load;
-    do_stop;
+    do_load:Group;
+    do_stop:Group;
     %the following are interal actions.
     central2battery_battery_start,central2battery_central_start,central2battery_start;
     central2battery_battery_stop,central2battery_central_stop,central2battery_stop;
@@ -86,12 +86,12 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		    	      <>Battery(current_battery,l,s)
 		)+
 		(l==low)->(
-		    do_load.(Battery(current_battery,middle,load)+Battery(current_battery,full,load))+
+		    do_load(current_battery).(Battery(current_battery,middle,load)+Battery(current_battery,full,load))+
 		    b2battery_battery_provide.
 		    battery2central_battery_energy.Battery(current_battery,low,s)
 		)+
 		(l==middle)->(
-		    do_load.Battery(current_battery,full,load)+
+		    do_load(current_battery).Battery(current_battery,full,load)+
 		    b2battery_battery_provide.
 		    sum bs:BatteryStatus.b2battery_battery_status(bs).
 		    (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
@@ -100,23 +100,23 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
 	%inform the CC if both batteries cannot provide. 
 	(s==provide)->(
-		central2battery_battery_stop.do_stop.Battery(current_battery,l,idle)+
+		central2battery_battery_stop.do_stop(current_battery).Battery(current_battery,l,idle)+
 		(l==middle)->do_provide(current_battery).Battery(current_battery,low,provide)+
 		(l==low)->(
-		    b2battery_b_provide.do_load.Battery(current_battery,l,load)
+		    b2battery_b_provide.do_load(current_battery).Battery(current_battery,l,load)
 		)
 	)+
 	(s==load)->(
-		central2battery_battery_stop.do_stop.Battery(current_battery,l,idle)+
-		(l==full)->do_stop.Battery(current_battery,full,idle)+
+		central2battery_battery_stop.do_stop(current_battery).Battery(current_battery,l,idle)+
+		(l==full)->do_stop(current_battery).Battery(current_battery,full,idle)+
 		(l==middle)->(
-		   do_load.Battery(current_battery,full,load)+
+		   do_load(current_battery).Battery(current_battery,full,load)+
 		   b2battery_battery_provide.
 		   sum bs:BatteryStatus.b2battery_battery_status(bs).
 		   (bs!=provide)->do_provide(current_battery).(Battery(current_battery,middle,provide)+Battery(current_battery,low,provide))
 		    	      <>Battery(current_battery,l,s) 
 		)
-		+(l==low)->do_load.(Battery(current_battery,full,load)+Battery(current_battery,middle,load))
+		+(l==low)->do_load(current_battery).(Battery(current_battery,full,load)+Battery(current_battery,middle,load))
 	);
 	
 %Models a motor
@@ -173,15 +173,14 @@ proc Motor(on:Bool,m:MotorMode,speed:Nat)=
                    	)<>(
 			central2motor_motor_switch(true).Motor(true,release,0)
 		);
-
-%Models the Display
+%Models the Safety control
 
 
 %Models the central control
 proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) = 	
-	emergency->
+	emergency->(
 		central2battery_central_stop.central2motor_central_stop.Central(false,true,false,desired_speed)
-	<>(
+	)<>(
 		(!start_switch)->(
 		   % sum s:Nat.motor2central_central_speed(s).
 		    %(s==0)->(
@@ -228,6 +227,7 @@ init allow({do_provide,do_load,do_stop,do_switch_on,do_switch_off,
     	battery2central_central_status|battery2central_battery_status->battery2central_status,
     	b2battery_battery_provide|b2battery_b_provide->b2battery_provide,
     	battery2central_battery_energy|battery2central_central_energy->battery2central_energy},
-	Battery(groupA,full,idle)||Motor(false,release,0)||Central(false,false,false,0))
+	Battery(groupA,full,idle)
+	||Motor(false,release,0)||Central(false,false,false,0))
 	);	
     
