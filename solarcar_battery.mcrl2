@@ -51,6 +51,7 @@ act do_switch_on;%start_button
     %the following are interal actions.
     central2battery_battery_start,central2battery_central_start,central2battery_start;
     central2battery_battery_stop,central2battery_central_stop,central2battery_stop;
+    central2battery_central_switch,central2battery_battery_switch,central2battery_switch:Bool;
     battery2central_central_status,battery2central_battery_status,battery2central_status:BatteryStatus;
     b2battery_battery_provide,b2battery_b_provide,b2battery_provide;
     b2battery_battery_status,b2battery_b_status,b2battery_status:BatteryStatus;
@@ -77,7 +78,7 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 			do_provide(current_battery).
 			Battery(groupA,middle,provide)
 		    )<>(
-     			battery2central_battery_status(s).Battery(current_battery,l,s)
+     			Battery(current_battery,l,s)
 		    )+
 		    b2battery_battery_provide.
 		    sum bs:BatteryStatus.b2battery_battery_status(bs).
@@ -102,6 +103,7 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		central2battery_battery_stop.do_stop(current_battery).Battery(current_battery,l,idle)+
 		(l==middle)->do_provide(current_battery).Battery(current_battery,low,provide)+
 		(l==low)->(
+		    central2battery_battery_switch(true).
 		    b2battery_b_provide.do_load(current_battery).Battery(current_battery,l,load)
 		)
 	)+
@@ -185,10 +187,12 @@ proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) =
 		    %(s==0)->(
 			do_switch_on.central2battery_central_start.
 			sum status:BatteryStatus.battery2central_central_status(status).
-			%check_emergency_recieve.check_emergency_ack_send(false)
 		    	(status==provide)->
 				Central(!start_switch,emergency,cruise,desired_speed)
-				<>Central(start_switch,emergency,cruise,desired_speed)
+				<>Central(start_switch,emergency,cruise,desired_speed)+
+			central2battery_central_switch(start_switch).
+			Central(start_switch,emergency,cruise,desired_speed)
+
 		   % )<>Central(start_switch,emergency,cruise,desired_speed)
 		)<>(
 		    (do_switch_off+battery2central_central_energy).
@@ -212,6 +216,8 @@ init allow({battery_status_send,do_provide,do_load,do_stop,do_switch_on,do_switc
 	central2motor_stop,
 	motor2central_speed,
 	central2battery_start,
+	central2battery_stop,
+	central2battery_switch,
 	battery2central_status,
 	b2battery_provide,
 	battery2central_energy},
@@ -223,10 +229,11 @@ init allow({battery_status_send,do_provide,do_load,do_stop,do_switch_on,do_switc
     	motor2central_motor_speed|motor2central_central_speed->motor2central_speed,
 	central2battery_battery_start|central2battery_central_start->central2battery_start,
     	central2battery_battery_stop|central2battery_central_stop->central2battery_stop,
+    	central2battery_central_switch|central2battery_battery_switch->central2battery_switch,
     	battery2central_central_status|battery2central_battery_status->battery2central_status,
     	b2battery_battery_provide|b2battery_b_provide->b2battery_provide,
     	battery2central_battery_energy|battery2central_central_energy->battery2central_energy},
-	Battery(groupA,full,idle)
+	Battery(groupA,full,idle)||Battery(groupB,full,idle)
 	||Motor(false,release,0)||Central(false,false,false,0))
 	);	
     
