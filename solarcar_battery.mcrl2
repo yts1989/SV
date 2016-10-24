@@ -52,7 +52,7 @@ act do_switch_on;%start_button
     central2battery_battery_start,central2battery_central_start,central2battery_start;
     central2battery_battery_stop,central2battery_central_stop,central2battery_stop;
     central2battery_central_switch,central2battery_battery_switch,central2battery_switch:Bool;
-    battery2central_central_status,battery2central_battery_status,battery2central_status:BatteryStatus;
+    battery2central_central_status,battery2central_battery_status,battery2central_status:Group#BatteryStatus;
     b2battery_battery_provide,b2battery_b_provide,b2battery_provide;
     b2battery_battery_status,b2battery_b_status,b2battery_status:BatteryStatus;
     battery2central_battery_energy,battery2central_central_energy,battery2central_energy;
@@ -69,16 +69,18 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 	%then the current battery start to provide if it is groupA,we assume both batteries are full and idle before the car is switched on.
 	%start_battery_recieve.
 	battery_status_send(current_battery,l,s).(
-	battery2central_battery_status(s).Battery(current_battery,l,s)+
-	b2battery_b_status(s).Battery(current_battery,l,s)+
+	%battery2central_battery_status(current_battery,s).Battery(current_battery,l,s)+
+	%b2battery_b_status(s).Battery(current_battery,l,s)+
 	(s==idle)->(
 		(l==full)->(
-		    central2battery_battery_start.
+		 %   central2battery_battery_start.
 		    (current_battery==groupA)->(
+			central2battery_battery_start.
 			do_provide(current_battery).
+			battery2central_battery_status(current_battery,provide).
 			Battery(groupA,middle,provide)
-		    )<>(
-     			Battery(current_battery,l,s)
+		%    )<>(
+     		%	Battery(current_battery,l,s)
 		    )+
 		    b2battery_battery_provide.
 		    sum bs:BatteryStatus.b2battery_battery_status(bs).
@@ -95,7 +97,8 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		%    b2battery_battery_provide.
 		%    sum bs:BatteryStatus.b2battery_battery_status(bs).
 		%    (bs!=provide)->do_provide(current_battery).Battery(current_battery,low,provide)
-		%    	      <>Battery(current_battery,l,s)		)
+		%    	      <>Battery(current_battery,l,s)		
+		)
 	)+
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
 	%inform the CC if both batteries cannot provide. 
@@ -103,8 +106,8 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		central2battery_battery_stop.do_stop(current_battery).Battery(current_battery,l,idle)+
 		(l==middle)->do_provide(current_battery).Battery(current_battery,low,provide)+
 		(l==low)->(
-		    central2battery_battery_switch(true).
-		    b2battery_b_provide.do_load(current_battery).Battery(current_battery,l,load)
+		    central2battery_battery_switch(true).%provide only when the car is switched on
+		    b2battery_b_provide.do_load(current_battery).b2battery_b_status(load).Battery(current_battery,l,load)
 		)
 	)+
 	(s==load)->(
@@ -186,10 +189,12 @@ proc Central(start_switch:Bool,emergency:Bool,cruise:Bool,desired_speed:Nat) =
 		   % sum s:Nat.motor2central_central_speed(s).
 		    %(s==0)->(
 			do_switch_on.central2battery_central_start.
-			sum status:BatteryStatus.battery2central_central_status(status).
-		    	(status==provide)->
-				Central(!start_switch,emergency,cruise,desired_speed)
-				<>Central(start_switch,emergency,cruise,desired_speed)+
+		%	sum status:BatteryStatus.battery2central_central_status(current_battery,status).
+		%    	(status==provide)->
+		%		Central(!start_switch,emergency,cruise,desired_speed)
+		%		<>Central(start_switch,emergency,cruise,desired_speed)+
+			battery2central_central_status(groupA,provide).
+			Central(!start_switch,emergency,cruise,desired_speed)+
 			central2battery_central_switch(start_switch).
 			Central(start_switch,emergency,cruise,desired_speed)
 
