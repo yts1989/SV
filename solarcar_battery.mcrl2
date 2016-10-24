@@ -86,16 +86,16 @@ proc Battery(current_battery:Group,l:BatteryLevel,s:BatteryStatus) =
 		    	      <>Battery(current_battery,l,s)
 		)+
 		(l==low)->(
-		    do_load(current_battery).Battery(current_battery,middle,load)+
-		    b2battery_battery_provide.
-		    battery2central_battery_energy.Battery(current_battery,low,s)
+		    do_load(current_battery).Battery(current_battery,middle,load)
+		%    b2battery_battery_provide.
+		%    battery2central_battery_energy.Battery(current_battery,low,s)
 		)+
 		(l==middle)->(
-		    do_load(current_battery).Battery(current_battery,full,load)+
-		    b2battery_battery_provide.
-		    sum bs:BatteryStatus.b2battery_battery_status(bs).
-		    (bs!=provide)->do_provide(current_battery).Battery(current_battery,low,provide)
-		    	      <>Battery(current_battery,l,s)		)
+		    do_load(current_battery).Battery(current_battery,full,load)
+		%    b2battery_battery_provide.
+		%    sum bs:BatteryStatus.b2battery_battery_status(bs).
+		%    (bs!=provide)->do_provide(current_battery).Battery(current_battery,low,provide)
+		%    	      <>Battery(current_battery,l,s)		)
 	)+
 	%if current providing battery is low then it requests the other to provide and start to load after getting the confirm signal.
 	%inform the CC if both batteries cannot provide. 
