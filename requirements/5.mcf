@@ -1,0 +1,3 @@
+%The loading batteries should be charged when the brake is pressed;
+forall l:BatteryLevel, n:Group.
+[true*.brake_pressed.!battery_status_send(n,l,load)*.do_load(n)]false

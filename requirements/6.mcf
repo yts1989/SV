@@ -1,0 +1,2 @@
+%6. The batteries can never be providing or loading energy when the system indicates a malfunction;
+forall n:Group.[true*.emergency_detected(true).!do_stop(n)]false

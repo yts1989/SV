@@ -1,0 +1,5 @@
+%Any battery group can never be loading energy when the battery level is full;
+forall n:Group.
+	[true*.battery_status_send(n,full,load)] mu X.
+		([!do_stop(n)]X
+		&& <true>true)

@@ -1,0 +1,4 @@
+%Any battery group can never be providing and loading energy at the same time;
+%If groupB is providing then groupA could not provide energy.
+%[true*.do_provide(groupB).!do_load(groupB)*.do_provide(groupA)]false
+[true*.do_load(groupA).!do_provide(groupA)*.do_load(groupB)]false

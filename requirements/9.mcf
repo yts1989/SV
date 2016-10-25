@@ -1,0 +1,4 @@
+k%The cruise control mode must be turned off and the energy provided to the motor should decrease when the brake is pressed;
+[true*.brake_pressed] mu
+	X.([!cruise_mode_unset]X 
+	&&<true>true)

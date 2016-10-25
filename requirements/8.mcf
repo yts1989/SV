@@ -1,0 +1,4 @@
+%No energy can be provided to the system when the start button is released;
+forall l:BatteryLevel, n:Group.
+	[true*.do_switch_off.!do_switch_on*
+	.battery_status_send(n,l,provide)]false

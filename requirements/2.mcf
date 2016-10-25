@@ -1,0 +1,5 @@
+%For any group of batteries, it must stop providing energy for motors if its own battery level is empty (below 5%);
+forall s:BatteryStatus, n:Group.
+[true*.battery_status_send(n,low,s)] mu
+	X.([!do_load(n)]X 
+	&& <true>true)
